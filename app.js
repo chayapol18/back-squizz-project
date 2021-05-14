@@ -1,8 +1,6 @@
 require("dotenv").config();
 const cors = require("cors");
 const express = require("express");
-const server = require('http').createServer();
-const io = require("socket.io")(server)
 const app = express();
 const errorMiddleware = require("./middlewares/error");
 const CollectionRoute = require("./routes/CollectionRoute");
@@ -13,7 +11,7 @@ const UserRoute = require("./routes/UserRoute");
 const UserHistory = require("./routes/UserHistoryRoute");
 const PointRecord = require("./routes/PointRecordRoute");
 
-// const { sequelize } = require('./models')
+const { sequelize } = require('./models')
 
 app.use(cors());
 app.use(express.json());
@@ -33,13 +31,7 @@ app.use((req, res, next) => {
 
 app.use(errorMiddleware);
 
-// sequelize.sync({ force: true}).then(() => console.log('DB sync'))
+sequelize.sync({ force: true}).then(() => console.log('DB sync'))
 
 const port = process.env.PORT;
 app.listen(port, () => console.log(`server is running on port ${port}`));
-
-// io.on('connection', client => {
-//   client.on('event', data => { /* … */ });
-//   client.on('disconnect', () => { /* … */ });
-// });
-// server.listen(3000);

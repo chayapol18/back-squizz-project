@@ -21,18 +21,9 @@ exports.getQuiz = async (req, res, next) => {
       where: { creatorId },
     });
 
-<<<<<<< HEAD
     const countQuestion = await Question.findAndCountAll({
       where: { quizId : quiz[0].id }
     })
-=======
-    const countQuestion = await Quiz.findAndCountAll({
-      where: { creatorId: id },
-      include: {
-        model: Question,
-      },
-    });
->>>>>>> origin/Backend/SetUp
 
     res.status(200).json({ quiz, countQuiz, countQuestion });
   } catch (err) {
