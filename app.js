@@ -16,6 +16,7 @@ const QuizRoute = require('./routes/QuizRoute')
 const UserRoute = require('./routes/UserRoute')
 const UserHistory = require('./routes/UserHistoryRoute')
 const PointRecord = require('./routes/PointRecordRoute')
+const e = require('cors')
 
 // const { sequelize } = require('./models')
 
@@ -41,6 +42,8 @@ app.use(errorMiddleware)
 
 const rooms = [] // [ 'id1', 'id2']
 const allPlayers = {}
+const count = {}
+const eachOptionCount = {}
 
 //  'id1': {
 //         players: [{id, name, score}, {id, name, score}]
@@ -61,7 +64,7 @@ io.on('connection', (socket) => {
   socket.on('create_lobby', (pin) => {
     console.log('creator', pin, socket.id)
     rooms.push(pin)
-    allPlayers[pin] = { players: [], quiz: {} }
+    allPlayers[pin] = { players: {}, quiz: {} }
     socket.join(`play_room_${pin}`)
     //change status(database): inactive >> waiting
     console.log('rooms', rooms)
@@ -73,15 +76,25 @@ io.on('connection', (socket) => {
   // })
 
   socket.on('player_joined', (input) => {
+    // const player = {
+    //   id: socket.id,
+    //   name: input.name,
+    //   scores: 0
+    // }
+    // allPlayers[input.pin].players.push(player)
+
     const player = {
-      id: socket.id,
       name: input.name,
       scores: 0
     }
 
-    allPlayers[input.pin].players.push(player)
-    console.log(allPlayers)
-    console.log(allPlayers[input.pin].players)
+    allPlayers[input.pin].players[socket.id] = {
+      ...allPlayers[input.pin].players[socket.id],
+      name: input.name,
+      scores: 0
+    }
+
+    allPlayers[input.pin].quiz[socket.id] = {}
 
     socket.join(`play_room_${input.pin}`)
 
@@ -91,13 +104,104 @@ io.on('connection', (socket) => {
   socket.on('start_quiz', (data) => {
     if (data.status === 'start') {
       socket.to(`play_room_${data.pin}`).emit('player_start', data.status)
-      socket.to(`play_room_${data.pin}`).emit('question_to_player', data.squizz)
+      let countOptions = 0
+      if (data.question.option1 !== null) countOptions = 1
+      if (data.question.option2 !== null) countOptions = 2
+      if (data.question.option3 !== null) countOptions = 3
+      if (data.question.option4 !== null) countOptions = 4
+
+      console.log('101', data.question)
+
+      const question1 = {
+        pin: data.pin,
+        title: data.question.title,
+        countOptions,
+        status: data.status,
+        questionId: data.question.id,
+        answer: data.question.answer
+      }
+
+      eachOptionCount[data.question.id] = {}
+
+      socket.to(`play_room_${data.pin}`).emit('question_to_player', question1)
     }
   })
 
+  socket.on('change_question', (data) => {
+    let countOptions = 0
+    if (data.question.option1 !== null) countOptions = 1
+    if (data.question.option2 !== null) countOptions = 2
+    if (data.question.option3 !== null) countOptions = 3
+    if (data.question.option4 !== null) countOptions = 4
+
+    const question = {
+      pin: data.pin,
+      title: data.question.title,
+      questionId: data.question.id,
+      countOptions,
+      answer: data.question.answer
+    }
+
+    eachOptionCount[question.questionId] = {}
+
+    socket.to(`play_room_${data.pin}`).emit('new_question_to_player', question)
+  })
+
   socket.on('answer_question', (data) => {
-    allPlayers[input.pin].quiz = {}
-    socket.to(`play_room_${data.pin}`).emit('player_start', data.status)
+    const socketId = data.id
+    const questionId = data.question.questionId
+    const pin = data.question.pin
+
+    if (eachOptionCount[questionId][data.option]) {
+      eachOptionCount[questionId][data.option] += 1
+    } else {
+      eachOptionCount[questionId][data.option] = 1
+    }
+
+    socket
+      .to(`play_room_${pin}`)
+      .emit('count_option', eachOptionCount[questionId])
+
+    if (data.question.answer === data.option) {
+      allPlayers[pin].quiz[socketId] = {
+        ...allPlayers[pin].quiz[socketId],
+        [questionId]: { option: data.option, status: 'correct' }
+      }
+
+      allPlayers[pin].players[socketId].scores += 1
+    } else {
+      allPlayers[pin].quiz[socketId] = {
+        ...allPlayers[pin].quiz[socketId],
+        [questionId]: { option: data.option, status: 'incorrect' }
+      }
+    }
+
+    console.log(allPlayers[pin].quiz)
+
+    socket
+      .to(`play_room_${pin}`)
+      .emit('is_correct_answer', allPlayers[pin].quiz)
+
+    if (allPlayers[pin].quiz[socketId][questionId]) {
+      if (count[questionId]) {
+        count[questionId] += 1
+      } else {
+        count[questionId] = 1
+      }
+    }
+
+    socket.to(`play_room_${pin}`).emit('count_answer', count)
+  })
+
+  socket.on('question_time_out', (data) => {
+    if (data.questionId)
+      socket
+        .to(`play_room_${data.pin}`)
+        .emit('check_answer', allPlayers[data.pin].quiz)
+  })
+
+  socket.on('quiz_end', (data) => {
+    socket.to(`play_room_${data.pin}`).emit('player_end_quiz', 'true')
   })
 
   socket.on('disconnect', () => {
